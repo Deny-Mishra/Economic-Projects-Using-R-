@@ -1,0 +1,538 @@
+rm(list=ls())
+
+library("urca")
+library("dynlm")
+library("tseries")
+library("forecast")
+library("lmtest")
+
+
+data = read.csv("C:/Deny/Second Semester/Times Series/Project/Final data on employment and its determinants.csv", header=TRUE)
+summary(data)
+library("stargazer")
+stargazer(data, title="Summary Statistics", type="text")
+
+##log transfromation
+data$lRGDP_percapita <- log(data[,6])
+source(file="C:/Deny/Second Semester/Times Series/Project/intord.R")
+intord(data$lRGDP_percapita)
+
+dfts = ts(data[,2:7],frequency = 4,start=c(1955,1)) # quarterly data starting Jan 1960
+plot.ts(dfts)
+
+##checking the stationarity
+
+intord(data$RGDPpercapita_growthrate) ##---> I(0) ---> no trend 
+intord(data$inflation) ##----> I(1) ---- > no trend
+intord(data$fedrata) ##-----> I(1) ----- > no trend
+intord(data$unemp)##--- > I(1) ---- > no trend
+intord(data$lRGDP_percapita)## ---- > I(1)---
+
+##checking unit root and trend
+urRGDP=ur.df(data$RGDPpercapita_growthrate,type="trend",selectlags="BIC") # trend stationary variable
+summary(urRGDP)
+##tt statistic is insignificant so no trend and tau3 statistics = -6.6723 < -3.98 @1%. Hence, reject null so no unit root.
+
+urinf=ur.df(data$inflation,type="trend",selectlags="BIC") # trend stationary variable
+summary(urinf)
+##tt statistic is insignificant so no trend and tau statistics = -3.3767 < -3.98 @1%. Hence, fail to reject null so there is unit root.
+
+urfedrate = ur.df(data$fedrata,type="trend",selectlags="BIC") # trend stationary variable
+summary(urfedrate)
+##tt statistic is insignificant so no trend and tau statistics = -3.0205 < -3.98 @1%. Hence, fail to reject null so there is unit root.
+
+urunemp = ur.df(data$unemp,type="trend",selectlags="BIC") # trend stationary variable
+summary(urunemp)
+##tt statistic is insignificant so no trend and tau statistics = -3.4472 < -3.98 @1%. Hence, fail to reject null so there is unit root.
+
+
+
+urGDPpercapita = ur.df(data$lRGDP_percapita,type="trend",selectlags="BIC") # trend stationary variable
+summary(urGDPpercapita)
+##tt is not significant and tau statistics = -1.724 > -3.98 --- > no unit root
+##conclusion: Except RGDP per capita growth rate is stationary at level and other variables are stationary after first difference. Hence, it is odd variable so we drop from further analysis or we don't include it as a part of the model.
+##Note: All the varaibles should be either statioanry at level or stationary after combination--- > if not, the odd variable should be dropped. 
+
+#converting stationary
+#dRGDP = diff(data$RGDPpercapita_growth_rate)
+dRGDPcapita = diff(data$lRGDP_percapita)
+intord(dRGDPcapita)
+
+dinflation = diff(data$inflation)
+intord(dinflation)
+
+dfedrate = diff(data$fedrata)
+intord(dfedrate)
+
+dunemp = diff(data$unemp)
+intord(dunemp)
+
+##conclustion
+
+
+
+
+#######checking for variables whether we can go for VAR or VECM model#######
+##Two conditions to check if we want to use VECm which is the best model for forecasting at level
+# first condtion: Taking intord of residuals of at least any one regression model built by combing variables shoudl be integrated.
+##second condition: coefficient of error correction term should be signifcant as well as negative
+##If thes both conditions are met we use VECM model--- > in any other situation we use VAR model
+##all the variables data should be either stationary or non-stationary at level--- if not drop the odd one in the group
+##after this, carry Engle granger process--- for this all the variables should be regressed to one another by interchaing one with other as dependent varaible
+##In this process we tryig to find----
+
+# First Test- Engle Granger Estimation Procedure (testing for co-integration of variables at level)
+
+lr = dynlm(data$inflation ~ data$fedrata + data$unemp + data$lRGDP_percapita)
+lr1 = dynlm(data$fedrata ~ data$inflation + data$unemp + data$lRGDP_percapita)
+lr2= dynlm(data$unemp ~ data$inflation + data$fedrata + data$lRGDP_percapita)
+lr3 = dynlm(data$lRGDP_percapita ~ data$inflation + data$fedrata + data$unemp)
+
+
+summary(lr)
+ehat = lr$residuals
+intord(ehat) # At level I(0):variables are cointegrated because at level the statistics -3.8<-3.46 @ 1% level of significance.
+
+summary(lr1)
+ehat1 = lr1$residuals
+intord(ehat1) # At level I(0):variables are not cointegrated because at level the statistics -3.31 >-3.46 @ 1% level of significance.
+par(mar = c(1, 1, 1, 1))
+summary(lr2)
+ehat2 = lr2$residuals
+intord(ehat2) # At level I(0):variables are cointegrated because at level the statistics -3.51<-3.46 @ 1% level of significance.
+
+
+summary(lr3)
+ehat4 = lr3$residuals
+intord(ehat4)# At level I(0):variables are not cointegrated because at level the statistics -.31 >-3.46 @ 1% level of significance.
+
+
+## Second Test-
+#First redefining variable
+lRGDP_percapita=data$lRGDP_percapita
+inflation=data$inflation
+fedrate=data$fedrata
+unemp=data$unemp
+
+
+#dy <- cbind(dRGDPcapita, dinflation,dfedrate,dunemp)  ### variables for I(0)--- variables shoudl I(0) for VAR model
+#y <- cbind(lRGDP_percapita, inflation, fedrate, unemp) ### varaibles should be I(1) for cointegration
+
+###Below lRGDP_percapita is being reduced from above
+dy <- cbind( dinflation,dfedrate,dunemp)  ### variables for I(0)--- variables shoudl I(0) for VAR model
+y <- cbind( inflation, fedrate, unemp) ### varaibles should be I(1) for cointegration
+
+
+#install.packages("sandwich")
+library(vars)
+
+#checking the number of lag the number of lags
+VARselect(dy, lag.max=12, type="const") ##whenever we see VAR command all variables should be stationary like we took first differnce of all variables and made them stationary 
+#Begin maximum lag = 12. However, to determine the final number of lags go down to Johansen VECm test which is done and finalize the number of lags and 
+#select at least more than 1 lags if we get sc(n)= 1 otherwise, whatever value is obtained at sc(n) put the same number of lags.
+
+nlags=2  #since we got sc(n)=1 so put 3 to begin with 
+
+############################# co-integration test#####################################
+##############Johansen Procedure###################
+
+# For this variables must be at level  #
+jc <- ca.jo(y, type="eigen", ecdet="const",K=nlags) 
+summary(jc)
+
+jct <- ca.jo(y, type="trace", ecdet="const",K=nlags) 
+summary(jct)
+
+
+# eigenvalues, etc., can be taken from the output of ca.jo
+eigenvals <- jc@lambda  ###If Jc is significant we shall use Jc and jc everywhere below. If jct is only significant we shall use only jct here and below
+
+# cointegrating relationships
+cointv <- jc@V
+cointj <- cointv[,1] ## considered lags = 2 here
+yym <- as.matrix(y)
+ecmj <- yym%*%cointj[1:3] + cointj[4] ### here 1:3 where 3 is the maximum number of variables I have in the model and at cointj[4] we should add 1 and  write 4
+intord(ecmj)
+
+##fail to reject @1% but rejecting @5%  It means they are cointegrating at 5% level. 
+
+
+################## Engle-Granger Precess ##############################################################
+#c1 <- lm(lRGDP_percapita ~ inflation + fedrate + unemp) # 
+#c2 <- lm(inflation ~ lRGDP_percapita + fedrate + unemp) ## 
+#c3 <- lm( fedrate ~ lRGDP_percapita + inflation + unemp)
+#c3 <- lm(  unemp ~ lRGDP_percapita + inflation + fedrate)
+
+
+c2 <- lm(inflation ~  fedrate + unemp) ## lRGDP_per capita is taken off 
+c3 <- lm( fedrate ~ inflation + unemp)
+c4 <- lm(  unemp ~  inflation + fedrate)
+
+#summary(c1)
+#ecm <- c1$residuals
+#dev.off()
+#par(mar = c(1, 1, 1, 1))
+#intord(ecm)
+
+
+summary(c4)
+ecm1 <- c4$residuals
+dev.off()
+par(mar = c(1, 1, 1, 1))
+intord(ecm1)
+
+
+#summary(c3)
+#ecm1 <- c3$residuals
+#dev.off()
+#par(mar = c(1, 1, 1, 1))
+#intord(ecm1)
+
+## Hence, residuals from Model 2 indicates they are co-integrated.
+
+####conclusion: since using both engle grager and co-integration the residuals were not co-integrated at levels.
+
+################VAR Specification########################################
+##Initially for VECM we decreased number of variables from 4 to 3 but it didn't work well
+##so continuing using four variables case in VAR model
+diffy <- cbind( dRGDPcapita,dinflation,dfedrate,dunemp) 
+# First a VAR(3): p = 2 based on BIC
+var3 <- VAR(diffy, p=12, type="const", season = 4) ##type = "const", "both" and "trend" and p = 2 which is number of lags
+summary(var3)
+var3
+library(stargazer)
+stargazer(var3, title="Summary Statistics", type="text")
+
+
+
+
+dev.off()
+par(mar = c(1, 1, 1, 1))
+plot(var3, names = "dinflation")
+plot(var3, names = "dRGDPcapita")
+plot(var3, names = "dunemp")
+plot(var3, names = "dfedrate")
+
+########
+##################
+# BoX-Ljung Q Statistic for unemployment
+
+
+##BoX-Ljung Q Statistic for inflation
+resi = var3$varresult$dinflation$residuals
+b = Box.test(resi,lag = 20, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(resi,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+
+##BoX-Ljung Q Statistic for inflation
+resi = var3$varresult$dRGDPcapita$residuals
+b = Box.test(resi,lag = 20, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(resi,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+
+
+
+resi = var3$varresult$dunemp$residuals
+b = Box.test(resi,lag = 20, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(resi,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+
+#BoX-Ljung Q Statistic for fedrate
+resi = var3$varresult$dfedrate$residuals
+b = Box.test(resi,lag = 20, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(resi,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+##################Impulse Response Function of Unemployment######################
+# variables in var3: dmr dcpi du  ( dRGDPcapita, dinflation,dfedrate,dunemp) 
+
+# IRFs
+irfs <- irf(var3, impulse = "dunemp", response = c("dunemp"), boot =
+              TRUE)
+plot(irfs)
+
+irfs <- irf(var3, impulse = "dunemp", response = c("dinflation"), boot =
+              TRUE)
+plot(irfs)
+
+irfs <- irf(var3, impulse = "dunemp", response = c("dfedrate"), boot =
+              TRUE)
+plot(irfs)
+
+
+
+irfs <- irf(var3, impulse = "dunemp", response = c("dRGDPcapita"), boot =
+              TRUE)
+plot(irfs)
+
+
+irfs <- irf(var3, impulse = "dunemp", response = c("dinflation", "dfedrate"), boot =
+              TRUE)
+plot(irfs)
+
+# with CIs
+irfs <- irf(var3, impulse = "dunemp", response = c("dunemp", "dinflation","dfedrate","dRGDPcapita"), n.ahead=12, boot=T)
+plot(irfs)
+
+
+
+##################Impulse Response Function of Log(real GDP per capita)######################
+# variables in var3: dmr dcpi du  ( dRGDPcapita, dinflation,dfedrate,dunemp) 
+
+# IRFs
+irfs <- irf(var3, impulse = "dRGDPcapita", response = c("dRGDPcapita"), boot =
+              TRUE)
+plot(irfs)
+
+irfs <- irf(var3, impulse = "dRGDPcapita", response = c("dinflation"), boot =
+              TRUE)
+plot(irfs)
+
+irfs <- irf(var3, impulse = "dRGDPcapita", response = c("dfedrate"), boot =
+              TRUE)
+plot(irfs)
+
+
+
+irfs <- irf(var3, impulse = "dunemp", response = c("dRGDPcapita"), boot =
+              TRUE)
+plot(irfs)
+
+
+irfs <- irf(var3, impulse = "dRGDPcapita", response = c("dinflation", "dfedrate"), boot =
+              TRUE)
+plot(irfs)
+
+# with CIs
+irfs <- irf(var3, impulse = "dRGDPcapita", response = c("dRGDPcapita", "dinflation","dfedrate","dunemp"),n.ahead=12, boot=T)
+plot(irfs)
+
+
+###################### Variance Decompositions (contribution of each variable to predicting a variable)##############################
+vard <- fevd(var3, n.ahead=12)
+vard
+vard$dha
+plot(vard, col=1:4) ##how many variables are there in the model use maximum value as per it. 
+###Here we have four values so we used col(1:4). This willhelp to present differnt variables indicating indicating different color
+
+
+
+##################Forecasting #######################
+fcast <- predict(var3, n.ahead = 12, ci = 0.95)
+
+plot(fcast)
+
+fcast
+
+
+
+###########
+
+# plotting forecasts for one variable (lm)
+#Real GDP per capita
+lhfaf <- fcast$fcst$dRGDPcapita[,1]## actual forecast of the variable
+lhfaflow <- fcast$fcst$dRGDPcapita[,2]##creating lower bound
+lhfafupp <- fcast$fcst$dRGDPcapita[,3]##creating upper bound
+ff <- cbind(lhfaf,lhfaflow,lhfafupp)##putting lower and upper bound and actual forecasted values together
+matplot(ff,col=c(1,2,2),lty=1,lwd=2,type='l')
+
+#Inflation
+lhfaf <- fcast$fcst$dinflation[,1]
+lhfaflow <- fcast$fcst$dinflation[,2] 
+lhfafupp <- fcast$fcst$dinflation[,3] 
+ff <- cbind(lhfaf,lhfaflow,lhfafupp) 
+matplot(ff,col=c(1,2,2),lty=1,lwd=2,type='l')
+
+
+#Unemployment
+lhfaf <- fcast$fcst$dunemp[,1]
+lhfaflow <- fcast$fcst$dunemp[,2]
+lhfafupp <- fcast$fcst$dunemp[,3]
+ff <- cbind(lhfaf,lhfaflow,lhfafupp)
+matplot(ff,col=c(1,2,2),lty=1,lwd=2,type='l')
+
+#Federal Fund Rate
+lhfaf <- fcast$fcst$dfedrate[,1]
+lhfaflow <- fcast$fcst$dfedrate[,2]
+lhfafupp <- fcast$fcst$dfedrate[,3]
+ff <- cbind(lhfaf,lhfaflow,lhfafupp)
+matplot(ff,col=c(1,2,2),lty=1,lwd=2,type='l')
+
+
+
+###################################################################################################
+######################Checking Granger casuality #################################################
+
+
+####the order of original combination of variables matter to examine the granger causality
+
+#original set of unrestricted model: diffy <- cbind( dRGDPcapita,dinflation,dfedrate,dunemp)  
+
+
+#######################################Granger Casuality #################################
+##### Does inflation granger cause unemp############# unemp Granger Causing inflation
+##Constructing unrestricted model taking all variables at level putting unemployment at first
+##unrestriced model
+lyr <- cbind(unemp, fedrate, lRGDP_percapita,inflation)    #  Here order matters--- first variable is unemployment so it will be dependent varialbe for whatever variable we remove to check granger casuality
+
+vecmr <- ca.jo(lyr, ecdet = "const", type="eigen", K=2, spec="longrun", #where k = 2 number of lags
+               season=12)
+ve1r <- cajools(vecmr,reg.number=1)  #dlemp is 1st equation
+
+##restricted Model
+ly <- cbind(unemp, fedrate, lRGDP_percapita)    #  drop inflation one variable for restricted model
+
+
+vecm <- ca.jo(ly, ecdet = "const", type="eigen", K=2, spec="longrun", #where k = 2 number of lags
+              season=12)
+ve1 <- cajools(vecm,reg.number=1)  #dlemp is 1st equation
+
+
+
+# Joint F-test for Granger causality
+anova(ve1r, ve1, test="F") 
+
+##conclusion:
+#p-value = 0.49 > 0.05. Hence, we fail to reject null hypothesis  which means inflation doesn't granger causes unemployment
+
+
+
+
+##Does fedrate granger cause unemployment
+
+ly1 <- cbind(unemp, lRGDP_percapita,inflation)    #  drop fedrate one variable for restricted model
+
+
+vecm1 <- ca.jo(ly1, ecdet = "const", type="eigen", K=2, spec="longrun", #where k = 2 number of lags
+               season=12)
+ve2 <- cajools(vecm1,reg.number=1)  #dlemp is 1st equation
+
+anova(ve1r, ve2, test="F") 
+
+#conclusion:
+##p-value = 0.07651 > 0.05. Hence, we fail to reject null hypothesis which means fedrate doesn't granger causes unemployment
+
+
+##Does lRGDP granger cause unemployment
+
+ly2 <- cbind(unemp, fedrate,inflation)    #  drop fedrate one variable for restricted model
+
+
+vecm2 <- ca.jo(ly2, ecdet = "const", type="eigen", K=2, spec="longrun", #where k = 2 number of lags
+               season=12)
+ve3 <- cajools(vecm2,reg.number=1)  #dlemp is 1st equation
+
+anova(ve1r, ve3, test="F") 
+
+#p-value = 2.2e-16  < 0.05. Hence, null hypothesis is rejected which means log(RGDP per capita) granger causes unemployment
+
+
+
+
+
+
+
+########What Grange cause log(Real GDP per capita)#########
+
+##Constructing unrestricted model taking all variables at level putting log(Real GDP per capita) at first
+
+##unrestricted model
+lyr1 <- cbind(lRGDP_percapita, fedrate, unemp,inflation)    #  Here order matters--- first variable is log (RGDP per capita) so it will be dependent varialbe for whatever variable we remove to check granger casuality
+
+vecmr1 <- ca.jo(lyr1, ecdet = "const", type="eigen", K=2, spec="longrun", #where k = 2 number of lags
+                season=12)
+ve1r <- cajools(vecmr1,reg.number=1)  #dlemp is 1st equation
+
+
+##Does inflation granger cause log(RGDP per capita)
+##constructed restricted Model by removing inflation from unrestricted above
+ly3 <- cbind(lRGDP_percapita, unemp, fedrate)    #  drop inflation one variable for restricted model
+vecm3 <- ca.jo(ly3, ecdet = "const", type="eigen", K=2, spec="longrun", #where k = 2 number of lags
+               season=12)
+ve3 <- cajools(vecm3,reg.number=1)  #dlemp is 1st equation
+# Joint F-test for Granger causality
+anova(ve1r, ve3, test="F") 
+
+# here p-value = 0.1204 > 0.05. Hence, we fail to reject null hypothesis. It means, inflation doesn't granger cause log(RGDP per capita)
+
+
+
+##Does fedrate granger cause log(Real GDP per capita)
+ly4 <- cbind(lRGDP_percapita,unemp,inflation)    #  drop fedrate one variable for restricted model
+vecm4 <- ca.jo(ly4, ecdet = "const", type="eigen", K=2, spec="longrun", #where k = 2 number of lags
+               season=12)
+ve4 <- cajools(vecm4,reg.number=1)  #dlemp is 1st equation
+
+# Joint F-test for Granger causality
+anova(ve1r, ve4, test="F") 
+
+#conclusion:
+# here p-value = 0.06552 > 0.05. Hence, we fail to reject null hypothesis. It means, fedrate doesn't granger cause log(RGDP per capita)
+
+
+
+
+
+####Does unemployment granger cause log(RGDP per capita)
+
+ly5 <- cbind(lRGDP_percapita, fedrate,inflation)    #  drop unemp one variable for restricted model
+vecm5 <- ca.jo(ly5, ecdet = "const", type="eigen", K=2, spec="longrun", #where k = 2 number of lags
+               season=12)
+ve5 <- cajools(vecm5,reg.number=1)  #dlemp is 1st equation
+# Joint F-test for Granger causality
+anova(ve1r, ve5, test="F")
+#conclusion:
+# here p-value = 4.627e-08 < 0.05. Hence, we reject null hypothesis. It means, unemployment granger cause log(RGDP per capita)
+
+#########################Testing volatility######################
+##ARCH effects
+ly <- cbind( inflation, fedrate, unemp,lRGDP_percapita)
+vecm1 <- ca.jo(ly, ecdet = "const", type="eigen", K=3, spec="longrun",
+               season=12)
+varf <- vec2var(vecm1, r = 1)
+
+
+library(vars)
+library(lmtest)
+Arch1 <- arch.test(varf, lags.multi = 3, multivariate.only = TRUE)
+Arch1
+
+dev.off()
+par(mar= c(1,1,1,1))
+plot(varf$resi)
+plot(varf$resi^2)
+##Here  p-value 2.2e-16 < 0.05. We reject the null. It means there is conditional heteroscedasticity. 
+
+
+
+
+
+
+
+
+
+
+
