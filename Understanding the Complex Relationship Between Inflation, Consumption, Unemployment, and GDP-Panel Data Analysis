@@ -1,0 +1,85 @@
+##clearing environment
+rm(list=ls())
+ 
+
+##Loading Packages 
+#install.packages("flextable")
+#install.packages("knitr")
+#install.packages("officer")
+library("officer")
+library(flextable)
+library("knitr")
+library(rmarkdown)
+library("rstudioapi")
+library("stargazer")
+library("plm")
+library("lmtest")
+library(plm)
+library(car)
+library(dplyr)
+library("dynlm")
+library(readxl)
+library(fastDummies)
+library(stargazer)
+#Loading the Data
+data <- read_excel("projectdata.xlsx")
+View(data)
+attach(data)
+summary(data)
+options("scipen"=9999999, digits=7)
+
+
+##Checking if panel data is balanced
+pdim(data)
+
+#Making Panel data Balanced 
+data.panel<-pdata.frame(data, index = c("id", "Year"))
+##Checking if panel data is balanced
+pdim(data.panel)
+
+#Assigning varibale
+LPCPI<-log(data.panel$Per.capita.personal.income)
+LPCPCE<- log(data.panel$Per.capita.personal.consumption.expenditures)
+lemp<-log(data.panel$Total.emp)
+lgdp<-log(data.panel$GDP)
+
+##Analyzing through different estimators 
+# Pooled OLS
+pols<-plm(inflation ~ lgdp+LPCPI+LPCPCE+lemp+ factor(Year), data=data.panel, model="pooling")
+summary(pols)
+# RE 
+re<-plm(inflation ~ lgdp+LPCPI+LPCPCE+lemp+ factor(Year),data=data.panel, model="random")
+summary(re)
+# FD 
+fd<-plm(inflation ~ lgdp+LPCPI+LPCPCE+lemp+ factor(Year), data=data.panel, model="fd")
+summary(fd)
+# FE 
+fe<-plm(inflation ~ lgdp+LPCPI+LPCPCE+lemp+ factor(Year), data=data.panel, model="within")
+summary(fe)
+
+
+##Reporting output
+stargazer(pols,re,fd,fe, type="html",out = "C:\\Users\\Dell\\OneDrive\\Desktop\\Second\\Panel data\\mytable.html", keep.stat=c('rsq','n'), 
+          omit=c("year"), omit.labels=c("Year Dummies"),
+          title="Table 1 inflation - pooled OLS RE FD FE")
+
+##Looking for the best estimate
+# BP test for unobserved heterogeneity
+bptest(pols)
+
+
+#Hausman Test 
+
+# FE VS RE
+phtest(fe,re)
+
+#Serial correlation test for FD
+pwfdtest(fd)
+
+##FE serial correlation test
+pwartest(fe)
+
+##Thus RE is best Estimator 
+stargazer(re,type="html",out = "C:\\Users\\Dell\\OneDrive\\Desktop\\Second\\Panel data\\mytable.html", keep.stat=c('rsq','n'), 
+          omit=c("year"), omit.labels=c("Year Dummies"),
+          title="Table 1 inflation- Random Effect")
