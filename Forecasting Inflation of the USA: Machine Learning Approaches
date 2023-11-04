@@ -1,0 +1,269 @@
+rm(list=ls())
+options("scipen"=999, digits=5)
+data <- read.csv("C:/Deny/Third Semester(capstone)/determinants of inflation/inflation and its determinants.csv")
+#
+Data <- na.omit(data)
+print(Data)
+#Descriptive statistics of all the variables
+summary(Data)
+
+#converting RGDP per capita into numeric from integer
+Data$RGDP_per_capita <- as.numeric(Data$RGDP_per_capita)
+
+scale_data <- scale(Data[,-1]) ##scaling data without column 1 which is a date column
+summary(scale_data)
+##splitting the data
+
+##splitting the daata
+library(FactoMineR)
+
+##split the data into train and test
+idx <- floor(0.70*nrow(scale_data))
+
+#set seed to make your parition reproducible
+train_ind <- sample(seq_len(nrow(scale_data)), size=idx)
+train <- scale_data[train_ind,]
+train_df <- as.data.frame(train) ##we have to convert the vector "train" into a data object
+
+test <- scale_data[-train_ind,]
+test_df <- as.data.frame(test)##we have to convert the vector "test" into a data object
+
+train_matrix <- as.matrix(train_df[, -which(names(train_df) == "inf")])
+test_matrix <- as.matrix(test_df[, -which(names(test_df) == "inf")])
+
+dim(train_df)
+dim(test_df)
+
+###############creating train and testing data matrix#############
+###This is done because glmnet function doesn't work with data frames so we have to create a numeric matrix for the training features and values of target variable
+
+
+y_train <- train_df$inf
+
+#define matrix of predictor variables
+x_train <- data.matrix(train_df[, c('effective.fed.fund.rate', 'RGDP_per_capita', 
+                          'unemp_rate', 'exp_infl_1yr', 'exp_inf_10yr', 'real_personal_cons_exp',
+                          'real_M2', 'real_govt_cosump_._gross_invst', 'fed_govt_current_exp', 'net_domestic_pvt_invst',
+                          'fed_govt_interestpayment', 'indus_produtn_index', 'commercial.indus_loans',
+                          'consumer_loans', 'creditcard_._other.loans', 'WTI', 'Unleaded', 'labor_productivity_nonfarm',
+                          'retail_sales', 'personal_consption_nondurable_goods', 'personal_consption_durable_goods',
+                          'import_index')])
+y_test <- test_df$inf
+
+#define matrix of predictor variables
+x_test <- data.matrix(test_df[, c('effective.fed.fund.rate', 'RGDP_per_capita', 
+                                    'unemp_rate', 'exp_infl_1yr', 'exp_inf_10yr', 'real_personal_cons_exp',
+                                    'real_M2', 'real_govt_cosump_._gross_invst', 'fed_govt_current_exp', 'net_domestic_pvt_invst',
+                                    'fed_govt_interestpayment', 'indus_produtn_index', 'commercial.indus_loans',
+                                    'consumer_loans', 'creditcard_._other.loans', 'WTI', 'Unleaded', 'labor_productivity_nonfarm',
+                                    'retail_sales', 'personal_consption_nondurable_goods', 'personal_consption_durable_goods',
+                                    'import_index')])
+
+
+
+#################################
+#library(glmnet)
+
+#perform k-fold cross-validation to find optimal lambda value
+#cv_model <- cv.glmnet(x_train, y_train, alpha = 1)
+
+#find optimal lambda value that minimizes test MSE
+#best_lambda <- cv_model$lambda.min
+#best_lambda
+
+#0.043779
+
+#produce plot of test MSE by lambda value
+#plot(cv_model) 
+
+#install.packages("caret")
+#library("caret")
+#model <- train(inf~ ., data = train3, method = "lm", trControl = trainControl(
+#                 method ="cv", number = 5,))
+
+
+############################################################################################################################
+##########################  LASSO Regression###########################################################################
+#############################################################################################################################
+
+set.seed(123)
+##First running lasso regression and then finding minimum lambda value####
+library(glmnet)
+cv.lass =cv.glmnet(x_train,y_train, family = "gaussian", alpha = 1, nfolds = 5, nlambda = 1000)
+summary(cv.lass)
+##MSE for several lambdas
+plot(cv.lass)
+##finding minimum lambdas
+print(cv.lass)
+#The minimum MSE is achieved when λ =  0.0315.
+
+##lasso path
+plot(cv.lass$glmnet.fit, "lambda", label=TRUE)
+
+
+##Finding beta (before that lets find minimum value of lambda)### 
+l.lasso.min <- cv.lass$lambda.1se ##If we want to compare lasso, ridge and elastic net- it is better using lambda.1se to obtain minimum lambda value rather than useing lasso.min
+
+##second stage- again running lasso regression but this time with minimum lambda) 
+lasso.model <- glmnet(x=x_train, y=y_train, alpha  = 1, lambda = l.lasso.min)
+print(lasso.model)
+
+##finding beta with minimum lambda
+lasso.model$beta
+
+
+
+####Predicting and comparing with test data
+lasso_pred <- predict(lasso.model, s= l.lasso.min, newx = x_test)###using test data set
+prediction_lasso <- data.frame(lasso_prediction = lasso_pred, actual_inflation = test_df$inf)
+
+# Print the prediction dataframe
+print(prediction_lasso)
+
+##Finding RMSE for both test and train data set fro lasso model
+
+train_lasso_pred <- predict(lasso.model, s= l.lasso.min, newx = x_train)####using training data set
+test_lasso_pred <- predict(lasso.model, s= l.lasso.min, newx = x_test)####using training data set
+
+# Calculate RMSE for train dataset
+train_rmse <- sqrt(mean((train_lasso_pred - y_train)^2))
+
+# Calculate RMSE for test dataset
+test_rmse <- sqrt(mean((test_lasso_pred - y_test)^2))
+
+# Print the RMSE values
+cat("RMSE on train dataset of lasso model:", train_rmse, "\n")
+cat("RMSE on test dataset of lasso model:", test_rmse, "\n")
+
+
+
+
+
+
+
+############################################################################################################################
+##########################  Ridge Regression###########################################################################
+#############################################################################################################################
+set.seed(123)
+##First running ridge regression and then finding minimum lambda value####
+library(glmnet)
+cv.ridge =cv.glmnet(x_train,y_train, family = "gaussian", alpha = 0, nfolds = 5, nlambda = 1000)
+summary(cv.ridge)
+##MSE for several lambdas
+plot(cv.ridge)
+##finding minimum lambdas
+print(cv.ridge)
+
+#The minimum MSE is achieved when λ =  0.0315.
+
+##lasso path
+plot(cv.ridge$glmnet.fit, "lambda", label=TRUE)
+
+
+##Finding beta (before that lets find minimum value of lambda)### 
+l.ridge.min <- cv.ridge$lambda.1se ##If we want to compare lasso, ridge and elastic net- it is better using lambda.1se to obtain minimum lambda value rather than useing lasso.min
+
+##second stage- again running lasso regression but this time with minimum lambda) 
+ridge.model <- glmnet(x=x_train, y=y_train, alpha  = 0, lambda = l.lasso.min)
+print(ridge.model)
+
+##finding beta with minimum lambda
+ridge.model$beta
+
+
+####Predicting and comparing with test data
+ridge_pred <- predict(ridge.model, s= l.ridge.min, newx = x_test)
+prediction_ridge <- data.frame(ridge_prediction = ridge_pred, actual_inflation = test_df$inf)
+ 
+# Print the prediction dataframe
+print(prediction_ridge)
+ 
+##Finding RMSE for both test and train data set for ridge model
+ 
+ train_ridge_pred <- predict(ridge.model, s= l.ridge.min, newx = x_train)####using training data set
+ test_ridge_pred <- predict(ridge.model, s= l.ridge.min, newx = x_test)####using training data set
+ 
+ # Calculate RMSE for train dataset
+ train_rmse_ridge <- sqrt(mean((train_ridge_pred - y_train)^2))
+ 
+ # Calculate RMSE for test dataset
+ test_rmse_ridge <- sqrt(mean((test_ridge_pred - y_test)^2))
+ 
+ # Print the RMSE values
+ cat("RMSE on train dataset of ridge model:", train_rmse_ridge, "\n")
+ cat("RMSE on test dataset of ridge model:", test_rmse_ridge, "\n")
+
+ 
+ 
+ 
+
+############################################################################################################################
+##########################  Elastic net Regression###########################################################################
+#############################################################################################################################
+ set.seed(123)
+ cv.enet = cv.glmnet(x_train,y_train, family = "gaussian", alpha = 0.5, nfolds = 5, nlambda = 1000)
+ 
+ summary(cv.enet)
+ ##MSE for several lambdas
+ plot(cv.enet)
+ ##finding minimum lambdas
+ print(cv.enet)
+ #The minimum MSE is achieved when λ =  0.263 ##If we want to compare lasso, ridge and elastic net- it is better using lambda.1se to obtain minimum lambda value rather than useing lasso.min
+ 
+ ##lasso path
+ plot(cv.enet$glmnet.fit, "lambda", label=TRUE)
+ 
+ 
+ 
+ 
+ ##Finding beta (before that lets find minimum value of lambda)### 
+ l.enet.min <- cv.enet$lambda.1se ##If we want to compare lasso, ridge and elastic net- it is better using lambda.1se to obtain minimum lambda value rather than useing lasso.min
+ 
+ ##second stage- again running lasso regression but this time with minimum lambda) 
+ enet.model <- glmnet(x=x_train, y=y_train, alpha  = 0.5, lambda = l.enet.min)
+ print(enet.model)
+ 
+ ##finding beta with minimum lambda
+ enet.model$beta
+ 
+
+ ####Predicting and comparing with test data
+ enet_pred <- predict(enet.model, s= l.enet.min, newx = x_test)
+ prediction_enet <- data.frame(enet_prediction = enet_pred, actual_inflation = test_df$inf)
+ 
+ # Print the prediction dataframe
+ print(prediction_enet)
+ 
+ 
+ ##Finding RMSE for both test and train data set for elastic net model
+ 
+ train_enet_pred <- predict(enet.model, s= l.enet.min, newx = x_train)####using training data set
+ test_enet_pred <- predict(enet.model, s= l.enet.min, newx = x_test)####using training data set
+ 
+ # Calculate RMSE for train dataset
+ train_rmse_enet <- sqrt(mean((train_enet_pred - y_train)^2))
+ 
+ # Calculate RMSE for test dataset
+ test_rmse_enet <- sqrt(mean((test_enet_pred - y_test)^2))
+ 
+ # Print the RMSE values
+ cat("RMSE on train dataset of elastic net model:", train_rmse_enet, "\n")
+ cat("RMSE on test dataset of elastic net model:", test_rmse_enet, "\n")
+ 
+ 
+ 
+ 
+#comparing coefficient of all regression:
+#install.packages("data.table")
+ cat("RMSE on train dataset of lasso model:", train_rmse, "\n")
+ cat("RMSE on test dataset of lasso model:", test_rmse, "\n")
+ 
+ cat("RMSE on train dataset of ridge model:", train_rmse_ridge, "\n")
+ cat("RMSE on test dataset of ridge model:", test_rmse_ridge, "\n")
+ 
+ cat("RMSE on train dataset of elastic net model:", train_rmse_enet, "\n")
+ cat("RMSE on test dataset of elastic net model:", test_rmse_enet, "\n")
+
+ ##Making a simple table like output of RMSE of all models
+ DF <- data.frame(train_rmse,test_rmse,train_rmse_ridge, test_rmse_ridge, train_rmse_enet, test_rmse_enet)
+ head(DF)
