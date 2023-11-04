@@ -1,0 +1,73 @@
+##Final Project
+rm(list=ls())
+install.packages("maptools")
+install.packages("spdep")
+install.packages("leaflet")
+install.packages("RColorBrewer")
+install.packages("rgeos")
+install.packages("spatialreg")
+install.packages("rgdal")
+install.packages("spatialprobit")
+library(spatialprobit)
+library(maptools)
+library(spdep)
+library(spatialreg)
+library(spdep)
+library(leaflet)
+library(RColorBrewer)
+library(rgeos)
+library(rgdal)
+library(bayesm)
+
+#load csv file with xy coordinates
+data = read.csv("final_data.csv",header=TRUE)
+options("scipen"=99999, digits=3)
+
+#create dummy for diversity 
+data$diversity = as.double(data$Percentage.change.in.Diversity>10)
+diversity=data$diversity
+n=length(diversity)
+x = cbind(data$Real.GDP.in.billion.2010/100000,data$Percentage.change.in.Real.GDP.in.billion)
+y = diversity
+coords = cbind(data$Longitude,data$Latitude)
+
+
+#create weight matrix based on 3 nearest neighbors
+k1 <- knn2nb(knearneigh(coords, k=3))
+W <- nb2listw(k1, zero.policy = T)
+Wt <- as(W, "CsparseMatrix")
+trMatc <- trW(Wt, type="mult")
+Wx <- as.matrix(Wt)%*%x
+#data=data.frame(x1 = x,
+#                Wx = Wx,
+#                y = y)
+data=data.frame(RGDP2010 = x[,1],
+                ChangeinRGDP = x[,2],
+                WRGDP2010 = Wx[,1],
+                WChangeinRGDP = Wx[,2],
+                diversity = y)
+
+reg = diversity ~ RGDP2010 + ChangeinRGDP 
+reg2 = diversity ~ RGDP2010 + ChangeinRGDP  + WRGDP2010+ WChangeinRGDP
+
+
+#SAR probit Model 
+# Estimate SAR probit model
+sarprobit.fit1 <- sarprobit(reg,data=data, Wt, ndraw = 5000, burn.in = 1000, thinning = 1, m = 10)
+
+summary(sarprobit.fit1)
+
+
+
+# evaluate direct, indirect, and total effects
+impacts(sarprobit.fit1)
+
+
+##LPM
+reg3=lm(diversity~data$RGDP2010 + data$ChangeinRGDP + data$ChangeinRGDP^2)
+summary(reg3)
+plot (sarprobit.fit1)
+
+## Probit model 
+Probit <- glm(diversity ~ RGDP2010 + ChangeinRGDP , family = binomial(link = "probit"), data=data)
+summary(Probit)
