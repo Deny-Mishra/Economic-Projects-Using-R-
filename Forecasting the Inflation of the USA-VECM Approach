@@ -1,0 +1,587 @@
+rm(list=ls())
+
+library("urca")
+library("dynlm")
+library("tseries")
+library("forecast")
+library("lmtest")
+
+
+data = read.csv("C:/Deny/Third Semester(capstone)/determinants of inflation/inflation and its determinants.csv")
+summary(data)
+#
+Data <- na.omit(data)
+print(Data)
+##considering the data set decided from machine learning##
+Data_final <- Data[, c(1, 2, 5, 6, 9,19,20,23)]
+(Data_final)
+
+##log transfromation
+Data_final$lrealM2 <- log(Data_final$real_M2)
+Data_final$lconsump_durable <- log(Data_final$personal_consption_durable_goods)
+
+dfts = ts(Data_final[,2:10],frequency = 4,start=c(2002)) # quarterly data starting Jan 1960
+plot.ts(dfts)
+
+source(file="C:/Deny/Third Semester(capstone)/determinants of inflation/intord.R")
+
+##checking the stationarity
+
+intord(Data_final$inf) ##---> I(1) 
+intord(Data_final$unemp_rate) ##----> I(1) 
+intord(Data_final$exp_infl_1yr ) ##-----> I(0) 
+intord(Data_final$lrealM2)##--- > I(1) 
+intord(Data_final$Unleaded)## ---- > I(1)
+intord(Data_final$labor_productivity_nonfarm)## ---- > I(1)
+intord(Data_final$lconsump_durable)## ---- > I(1)
+##checking unit root and trend
+ur_inf=ur.df(Data$inf, type="trend",selectlags="BIC") # trend stationary variable
+summary(ur_inf)
+##tt statistic is insignificant so no trend and tau3 statistics = -6.6723 < -3.98 @1%. Hence, reject null so no unit root.
+
+ur_unemp=ur.df(Data_final$unemp_rate,type="trend",selectlags="BIC") # trend stationary variable
+summary(ur_unemp)
+##tt statistic is insignificant so no trend and tau statistics = -3.3767 < -3.98 @1%. Hence, fail to reject null so there is unit root.
+
+urf_exp_inf = ur.df(Data_final$exp_infl_1yr ,type="trend",selectlags="BIC") # trend stationary variable
+summary(urf_exp_inf)
+##tt statistic is insignificant so no trend and tau statistics = -3.0205 < -3.98 @1%. Hence, fail to reject null so there is unit root.
+urf_unleaded = ur.df(Data_final$Unleaded,type="trend",selectlags="BIC") # trend stationary variable
+summary(urf_unleaded)
+##tt statistic is insignificant so no trend and tau statistics = -3.4472 < -3.98 @1%. Hence, fail to reject null so there is unit root.
+
+urf_labor_prod = ur.df(Data_final$labor_productivity_nonfarm,type="trend",selectlags="BIC") # trend stationary variable
+summary(urf_labor_prod)
+##tt is not significant and tau statistics = -1.724 > -3.98 --- > no unit root
+urf_M2 = ur.df(Data_final$lrealM2,type="trend",selectlags="BIC") # trend stationary variable
+summary(urf_M2)
+
+urf_durable= ur.df(Data_final$lconsump_durable,type="trend",selectlags="BIC") # trend stationary variable
+summary(urf_durable)
+
+
+
+
+
+#conclusion: Except exp_inf_1yr, all the variables are stationary after first difference. it si because the variables is stationary at level wehreas other variables were staionary only after first difference. 
+##Note: All the varaibles should be either statioanry at level or stationary after combination--- > if not, the odd variable should be dropped. 
+
+#converting stationary
+#dRGDP = diff(data$RGDPpercapita_growth_rate)
+dinf = diff(Data_final$inf)
+intord(dinf)
+dunemp = diff(Data_final$unemp_rate)
+intord(dunemp)
+
+dunlead= diff(Data_final$Unleaded)
+intord(dunlead)
+
+dlabor_prod = diff(Data_final$labor_productivity_nonfarm)
+intord(dlabor_prod)
+
+dM2 = diff(Data_final$lrealM2)
+intord(dM2)
+
+d_durable = diff(Data_final$lconsump_durable)
+intord(d_durable)
+
+
+##conclustion
+
+#######checking for variables whether we can go for VAR or VECM model#######
+##Two conditions to check if we want to use VECm which is the best model for forecasting at level
+# first condtion: Taking intord of residuals of at least any one regression model built by combing variables shoudl be integrated.
+##second condition: coefficient of error correction term should be signifcant as well as negative
+##If thes both conditions are met we use VECM model--- > in any other situation we use VAR model
+##all the variables data should be either stationary or non-stationary at level--- if not drop the odd one in the group
+##after this, carry Engle granger process--- for this all the variables should be regressed to one another by interchaing one with other as dependent varaible
+##In this process we tryig to find----
+
+# First Test- Engle Granger Estimation Procedure (testing for co-integration of variables at level)
+
+lr = dynlm(Data_final$inf ~ Data_final$unemp_rate + Data_final$Unleaded + Data_final$labor_productivity_nonfarm + Data_final$lrealM2 + Data_final$lconsump_durable)
+lr1 = dynlm(Data_final$unemp_rate ~ Data_final$inf + Data_final$Unleaded + Data_final$labor_productivity_nonfarm + Data_final$lrealM2 + Data_final$lconsump_durable)
+lr2 = dynlm(Data_final$Unleaded ~ Data_final$inf + Data_final$unemp_rate + Data_final$labor_productivity_nonfarm + Data_final$lrealM2 + Data_final$lconsump_durable)
+lr3 = dynlm(Data_final$labor_productivity_nonfarm ~ Data_final$inf + Data_final$unemp_rate + Data_final$Unleaded + Data_final$lrealM2 + Data_final$lconsump_durable)
+lr4 = dynlm(Data_final$lrealM2 ~ Data_final$inf + Data_final$unemp_rate + Data_final$Unleaded + Data_final$labor_productivity_nonfarm + Data_final$lconsump_durable)
+lr5 = dynlm(Data_final$lconsump_durable ~ Data_final$inf + Data_final$unemp_rate + Data_final$Unleaded + Data_final$labor_productivity_nonfarm + Data_final$lrealM2)
+
+summary(lr)
+ehat = lr$residuals
+intord(ehat) # At level I(0):variables are cointegrated because at level the statistics -4.85<-3.46 @ 1% level of significance.
+
+summary(lr1)
+ehat1 = lr1$residuals
+intord(ehat1) # At level I(0):variables are not cointegrated because at level the statistics -3.31 >-3.46 @ 1% level of significance.
+par(mar = c(1, 1, 1, 1))
+summary(lr2)
+ehat2 = lr2$residuals
+intord(ehat2) # At level I(0):variables are cointegrated because at level the statistics -3.51<-3.46 @ 1% level of significance.
+
+
+summary(lr3)
+ehat4 = lr3$residuals
+intord(ehat4)# At level I(0):variables are not cointegrated because at level the statistics -.31 >-3.46 @ 1% level of significance.
+
+
+
+## Second Test-
+#First redefining variable
+inflation=Data_final$inf 
+
+unemp=Data_final$unemp_rate
+unlead=Data_final$Unleaded
+productivity=Data_final$labor_productivity_nonfarm
+M2=Data_final$lrealM2
+durable=Data_final$lconsump_durable
+
+
+
+#dy <- cbind(dRGDPcapita, dinflation,dfedrate,dunemp)  ### variables for I(0)--- variables shoudl I(0) for VAR model
+#y <- cbind(lRGDP_percapita, inflation, fedrate, unemp) ### varaibles should be I(1) for cointegration
+
+
+###Below lRGDP_percapita is being reduced from above
+#dy <- cbind( dinf,dunemp,dunlead,dlabor_prod,dM2,d_durable)  ### variables for I(0)--- variables shoudl I(0) for VAR model
+#dy <- cbind( dinf,dunemp,dunlead,dM2,d_durable) #dlabor_prod variable was removed 
+dy <- cbind( dinf,dunemp,dunlead,dlabor_prod, dM2, d_durable) #d_durable
+y <- cbind( inflation, unemp,unlead, productivity, M2, durable) ### varaibles should be I(1) for cointegration
+
+
+
+#install.packages("sandwich")
+library(vars)
+
+#checking the number of lag the number of lags
+lagselect <- VARselect(dy, lag.max= 10, type="const") ##whenever we see VAR command all variables should be stationary like we took first differnce of all variables and made them stationary 
+lagselect$selection
+lagselect$criteria
+#Begin maximum lag = 12. However, to determine the final number of lags go down to Johansen VECm test which is done and finalize the number of lags and 
+#select at least more than 1 lags if we get sc(n)= 1 otherwise, whatever value is obtained at sc(n) put the same number of lags.
+
+nlags <- 10 #since we got sc(n)=1 so put 3 to begin with 
+
+############################# co-integration test#####################################
+##############Johansen Procedure###################
+
+# For this variables must be at level i.e. non-stationary at level  #
+##JOhansen co-integration test (using both eigen values and trace values)###
+##a. Using eigen values##
+jc <- ca.jo(y, type="eigen", ecdet="const",K=nlags) #we taking y table becasue they all are non-staitonary at level
+summary(jc)
+jc@teststat
+jc@cval 
+## test statistic values ( 13.885  30.545  62.346 120.940 126.998 136.577) critical values form co-integration test
+
+
+##b. Using trace values###
+jct <- ca.jo(y, type="trace", ecdet="const",K=nlags) #we taking y table becasue they all are non-staitonary at level
+summary(jct)
+jct@teststat
+jct@cval
+
+
+
+# eigenvalues, etc., can be taken from the output of ca.jo
+eigenvals <- jc@lambda  ###If Jc is significant we shall use Jc and jc everywhere below. If jct is only significant we shall use only jct here and below
+
+# cointegrating relationships
+cointv <- jct@V
+cointj <- cointv[,1] ## considered lags = 2 here
+yym <- as.matrix(y)
+ecmj <- yym%*%cointj[1:6] + cointj[7] ### here 1:6 where 6 is the maximum number of variables I have in the model and at cointj[4] we should add 1 and  write 4
+ecmj<- as.numeric(ecmj)
+intord(ecmj)
+
+##########################Estimating VECM###############################################################################################
+##Buidling ecmj and ecm including one lag on both ecmj or ecm in the VAR as an exog variable 
+
+
+par(mfrow=c(1,2))
+#plot(ecm1,type='l')
+plot(ecmj,type='l') #only considering johansen co-integration which was signficant above
+
+#create a lag for ECM term- since Johansen is significant So I am using for Johansen test
+ecj <- embed(ecmj,2) ## for johansen --- here 2 is the first lag
+ecmj1 <- ecj[,2]
+
+# VECM with Johansen---- Here VAR model is VECm when the term- exogen is added in the model
+var4 <- VAR(dy, p=5, type="cons",exogen=ecmj1, seas = 4) ## Here, exogen = ecmj  is introduced using Johansen test and it is the error correction term introduced in VAR which makes it VECM model
+summary(var4)
+resid <- var4$varresult$dinf$residuals
+plot(resid)
+resid2 <- (resid^2) ##square of residuals is variance
+plot(resid2)
+
+##Adjusting taking p = 2 to 11 lags including seas dummy and excluding as well. The best model was obtained when p = 5
+##when p = 5, R-square was 0.5 and 5 variables were significant. 
+
+
+###################Diagnostic test###########################################
+
+########Testing residuals##############
+##since there are 6 variables in teh model for each variable residuals are calculated so we cannot obtain intord for whole model and check the residuals 
+##so we have to check the correlation of each variable one by one 
+##For each variable- inflation, unemployment and fed rate  of Var 4 (which is best so far) we checking serial correlation
+##One checked one by one using differnct models starting from var9 to var6, var7, var8 and so on to find model with no serial correlation
+# BoX-Ljung Q Statistic for inflation
+resi = var4$varresult$dinf$residuals
+b = Box.test(resi,lag = 2, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(resi,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+##As p-value (0.7485>0.05). Hence, null hypothesis is rejectd which means there is no serial correlation after 9th lag i.e. lag = 4
+
+
+#BoX-Ljung Q Statistic for unemployment
+resi = var4$varresult$dunemp$residuals
+b = Box.test(resi,lag = 2, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(resi,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+
+##conclusion- Here, p-value is 0.8338 > 0.05. Hence, null hypothesis is rejected when taking lag = 2. Hence, there is no serial correlation.
+
+##BoX-Ljung Q Statistic for Average Unleaded gas price
+resi = var4$varresult$dunlead$residuals
+b = Box.test(resi,lag = 2, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(resi,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+##conclusion- Here, p-value = 0.8869>0.5. Hence, null hypothesis is rejected. So, there is no serial correlation
+
+##BoX-Ljung Q Statistic for 
+resi = var4$varresult$dlabor_prod$residuals
+b = Box.test(resi,lag = 2, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(resi,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+##Here, p-value 0742>0.05. Hence, null hypothesis is rejected which means ther is o serial correlaiton after lag=2. 
+
+##BoX-Ljung Q Statistic for Broad Money Supply
+resi = var4$varresult$dM2$residuals
+b = Box.test(resi,lag = 2, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(resi,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+#serial correlation even after adjusting lag from 3 to 20
+
+##BoX-Ljung Q Statistic for Demand for Durable Goods
+resi = var4$varresult$d_durable$residuals
+b = Box.test(resi,lag = 2, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(resi,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+
+dev.off()
+
+plot(var4, names = "dinf")
+plot(var4, names = "dunemp")
+plot(var4, names = "dunlead")
+plot(var4, names = "dlabor_prod")
+plot(var4, names = "dM2")
+plot(var4, names = "d_durable")
+
+
+##########Checking significance of trend in the model###############
+#here type = "trend"
+var5 <- VAR(dy, p=5, type="trend", exogen=ecmj1,season=4)  ##where dy = dy <- cbind(dRGDPcapita, dinflation,dfedrate,dunemp)
+summary(var5)
+var5$re
+##conclusion: In the output table- trend variable is not found coefficient--- If found trend is significant we have to remove it so we have to improve above function from type = "trend" to type = "const" or type = "both"
+ve1 <- cajools(var5,reg.number=1)
+##conclusion: we removing only trend from the model. Hence, we go with same model- var4 where type = "const" will be considered including seasonal lags
+
+
+##fail to reject @1% but rejecting @5%  It means they are cointegrating at 5% level. 
+#install.packages("urca")
+#install.packages("vars")
+#install.packages("tsDyn")
+library(urca)
+library(vars)
+library(tsDyn)
+
+vecm1 <- VECM(y, lag = 6, r = 5, exogen=ecmj1)
+vecm1
+
+
+vecm <- cajorls(jc)
+vecm
+vecm$rlm
+
+##Error correcion term for the VECM model###
+vecm1$rlm$coefficients[1,1]
+vecm1$rlm$coefficients[1,2]
+vecm1$rlm$coefficients[1,3]
+vecm1$rlm$coefficients[1,4]
+vecm1$rlm$coefficients[1,5]
+vecm1$rlm$coefficients[1,6]
+
+
+vecm1$beta[1,1]
+vecm1$beta[2,1]
+vecm1$beta[3,1]
+vecm1$beta[4,1]
+vecm1$beta[5,1]
+vecm1$beta[6,1]
+
+##DIagnostic Test
+
+
+##For Forecasting we hav to convert VECM to VAR
+VARMODEL <- vec2var(jct, r = 2)
+ax <- predict(VARMODEL, , n.ahead = 12)
+plot(ax)
+
+# plotting forecasts for one variable (lm)
+##inflation
+lhfaf <- ax$fcst$inflation[,1]
+lhfaflow <- ax$fcst$inflation[,2]
+lhfafupp <- ax$fcst$inflation[,3]
+ff <- cbind(lhfaf,lhfaflow,lhfafupp)
+matplot(ff,col=c(1,2,2),lty=1,lwd=2,type='l')
+
+#Varaince decomposition
+vard <- fevd(VARMODEL, n.ahead=12, which = "inflation")
+vard
+vard$inflation
+plot(vard, col=1:7)
+
+
+
+
+
+##############################Testing residuals#######################################
+##For each variable- inflation, unemployment and fed rate  of Var9(which is best so far) we checking serial correlation
+##One checked one by one using differnct models starting from var9 to var6, var7, var8 and so on to find model with no serial correlation
+# BoX-Ljung Q Statistic for unemployment
+
+##checking serial correlation
+serial <- serial.test(var4, lags.pt = 5, type = "PT.asymptotic")
+serial
+##ARCH Effects
+ARCH <- arch.test(var4, lags.multi = 15, multivariate.only = TRUE)
+ARCH
+#Normality of Residuals
+normality <- normality.test(var4, multivariate.only = TRUE)
+normality
+
+# IRFs
+irfs <- irf(var4, impulse = "dinf", response = c("dunemp"), boot =
+              TRUE)
+plot(irfs)
+
+irfs1 <- irf(var4, impulse = "dinf", response = c("dunlead"), boot =
+              TRUE)
+plot(irfs1)
+
+irfs2 <- irf(var4, impulse = "dinf", response = c("dlabor_prod"), boot =
+              TRUE)
+plot(irfs2)
+
+irfs3 <- irf(var4, impulse = "dinf", response = c("dM2"), boot =
+              TRUE)
+plot(irfs3)
+
+irfs4 <- irf(var4, impulse = "dinf", response = c("d_durable"), boot =
+              TRUE)
+plot(irfs4)
+
+
+irfs5 <- irf(var4, impulse = "dinf", response = c("dunemp", "dunlead", "dlabor_prod", "dM2", "d_durable"), boot =
+               TRUE)
+plot(irfs5)
+
+
+
+
+
+
+
+
+
+
+##forecasting
+forecasting_inflation <- predict(VARMODEL, n.ahead = 12, ci = 0.95)
+forecasting_inflation
+plot(forecasting_inflation)
+
+
+
+
+
+
+
+
+##############################Testing residuals#######################################
+##For each variable- inflation, unemployment and fed rate  of Var9(which is best so far) we checking serial correlation
+##One checked one by one using differnct models starting from var9 to var6, var7, var8 and so on to find model with no serial correlation
+# BoX-Ljung Q Statistic for unemployment
+resi = var5$varresult$dunemp$residuals
+b = Box.test(resi,lag = 20, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(resi,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+
+#BoX-Ljung Q Statistic for fedrate
+resi = var5$varresult$dfedrate$residuals
+b = Box.test(resi,lag = 20, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(resi,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+
+##BoX-Ljung Q Statistic for inflation
+resi = var5$varresult$dinflation$residuals
+b = Box.test(resi,lag = 20, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(resi,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+
+
+##conclusion on var9 model--> there is serial correlation found in the variables- inflation and fedrate because p-value > 0.05. Hence, we reject null
+##conclusion on var5 model ---> there is serial correlation found in inflation
+##conclusion on var6 model ---> there is serial correlation found in inflation
+##conclusion on var7 model ---> there is serial correlation found in inflation
+##conclusion on var8 model ---> there is serial correlation found in inflation 
+
+##0verall consulion:
+##Base model will be var6 
+
+
+
+
+
+
+###################################################################################################
+##########################################Forecasting ##############################################
+
+# Johansen VECM procedure - unrestricted
+# yy <- cbind(lhfa, linc, lu, lp) - unrestricted setup
+
+vecm1 <- ca.jo(y, ecdet = "trend", type="eigen", K=2, spec="longrun", ## Here lags = 2 and y <- cbind( inflation, fedrate, unemp) 
+               
+               season=12)
+
+ve1 <- cajools(vecm1,reg.number=1)  #hfa is 1st equation
+
+varf <- vec2var(vecm1, r = 1)
+par(mar=c(2,2,2,2))
+fcast <- predict(varf, n.ahead = 4, ci = 0.95)
+
+plot(fcast)
+
+fcast
+
+
+
+# plotting forecasts for one variable (lm)
+##inflation
+lhfaf <- fcast$fcst$inflation[,1]
+lhfaflow <- fcast$fcst$inflation[,2]
+lhfafupp <- fcast$fcst$inflation[,3]
+ff <- cbind(lhfaf,lhfaflow,lhfafupp)
+matplot(ff,col=c(1,2,2),lty=1,lwd=2,type='l')
+
+##Federal Fund rate
+lhfaf <- fcast$fcst$fedrate[,1]
+lhfaflow <- fcast$fcst$fedrate[,2]
+lhfafupp <- fcast$fcst$unemp[,3]
+ff <- cbind(lhfaf,lhfaflow,lhfafupp)
+matplot(ff,col=c(1,2,2),lty=1,lwd=2,type='l')
+
+##Unemployment
+lhfaf <- fcast$fcst$unemp[,1]
+lhfaflow <- fcast$fcst$unemp[,2]
+lhfafupp <- fcast$fcst$unemp[,3]
+ff <- cbind(lhfaf,lhfaflow,lhfafupp)
+matplot(ff,col=c(1,2,2),lty=1,lwd=2,type='l')
+
+
+#################
+
+# plots of fit results
+dev.off()
+par(mar = c(1, 1, 1, 1))
+plot(var3, names = "dmr")
+plot(var4, names = "dcpi")
+plot(var4, names = "du")
+
+###################################################################################################
+######################Checking Granger casuality #################################################
+
+
+####the order of original combination of variables matter to examine the granger causality
+
+#original set of unrestricted model: y <- cbind( inflation, fedrate, unemp)  
+
+##Does unemployment granger cause inflation
+lyr <- cbind(inflation, fedrate)    #  drop unemp one variable for restricted model
+vecmr <- ca.jo(lyr, ecdet = "const", type="eigen", K=2, spec="longrun", #where k = 2 number of lags
+               season=12)
+ve1r <- cajools(vecmr,reg.number=1)  #dlemp is 1st equation
+
+# Joint F-test for Granger causality
+anova(ve1, ve1r, test="F") 
+
+###Does fedrate granger cause inflation
+
+lyr1 <- cbind(inflation, unemp)    #  drop unemp one variable for restricted model
+vecmr1 <- ca.jo(lyr1, ecdet = "const", type="eigen", K=2, spec="longrun", #where k = 2 number of lags
+                season=12)
+ve2r <- cajools(vecmr1,reg.number=1)  #dlemp is 1st equation
+
+# Joint F-test for Granger causality
+anova(ve1, ve2r, test="F") 
+
+
+
+###################Dynamic model with vecm model########################
+
+
+
+
