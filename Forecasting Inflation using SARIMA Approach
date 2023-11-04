@@ -1,0 +1,627 @@
+rm(list=ls())
+options("scipen"=999, digits=5)
+data <- read.csv("C:/Deny/Third Semester(capstone)/determinants of inflation/inflation and its determinants.csv")
+#
+Data <- na.omit(data)
+print(Data)
+#Descriptive statistics of all the variables
+summary(Data)
+
+#converting RGDP per capita into numeric from integer
+Data$RGDP_per_capita <- as.numeric(Data$RGDP_per_capita)
+######################Visualizing using correlation matrix######################
+
+pairs(
+  x = Data[2:23],
+  main = "A matrix",
+  pch = 21
+  )
+
+cor_matrix <- cor(Data[2:23])
+#install.packages("corrplot")
+library(corrplot)
+corrplot(cor_matrix, method = "color")
+
+# Print the correlation matrix
+print(cor_matrix)
+
+###########################################################################
+#log tranformation
+LRGDP <-  log(Data$RGDP_per_capita)
+LRPCEXP <- log(Data$real_personal_cons_exp) 
+LRM2 <- log(Data$real_M2)
+LRGCONSUM <- log(Data$real_govt_cosump_._gross_invst) 
+LGOVTCEXP <- log(Data$fed_govt_current_exp) 
+#LPVTINVST <- log(Data$net_domestic_pvt_invst) 
+LINTRSTPAY <- log(Data$fed_govt_interestpayment)
+LINDUSLOAN <- log(Data$commercial.indus_loans) 
+LCONSLOANS <- log(Data$consumer_loans) 
+LCREDICARD <- log(Data$creditcard_._other.loans)
+LRETAILSALES <- log(Data$retail_sales) 
+LPCONSUMPNONDG <- log(Data$personal_consption_nondurable_goods) 
+LPCONSUMPDG <- log(Data$personal_consption_durable_goods)
+
+# Apply multiple regression with log transformation
+model <- lm(Data$inf ~ Data$effective.fed.fund.rate + LRGDP + Data$unemp_rate + Data$exp_infl_1yr + Data$exp_inf_10yr + LRPCEXP + LRM2
+            + LRGCONSUM + LGOVTCEXP + Data$net_domestic_pvt_invst + LINTRSTPAY + Data$indus_produtn_index 
+            + LINDUSLOAN + LCONSLOANS + LCREDICARD + Data$WTI + Data$Unleaded + Data$labor_productivity_nonfarm 
+            + LRETAILSALES + LPCONSUMPNONDG + LPCONSUMPDG + Data$import_index, data = Data, na.action = na.exclude)
+
+
+# Print the regression results
+summary(model)
+
+
+
+
+
+
+
+
+####################################################################################################
+############################ARIMA for inflation##############################
+####################################################################################################
+##Removing NA from the data set##
+
+
+library("tseries")
+library("urca")
+library("forecast")
+library("dynlm")
+library("lmtest")
+library(ggplot2)
+
+
+INF <- data.frame(data$inf[!is.na(data$inf)])
+INF
+dfts = ts(INF, start=c(1948,1), frequency=4)
+plot.ts(dfts)
+
+# Create the window for the desired time period (up to 2020 Q1)
+win_inf <- window(dfts, end = c(2010,4)) ##only considered data upto 2020 firs quarter i.e. 73 observations out of 85
+dim(dfts)
+dim(win_inf)
+
+# Print the new windowed time series
+print(win_inf)
+plot.ts(win_inf)
+
+#unit root test
+par(mar = c(1, 1, 1, 1))
+source(file="C:/Deny/Third Semester(capstone)/determinants of inflation/intord.R")
+intord(win_inf) ####------ > since the data is stationary at level because critical value -1.96>-3.46. So, no need to take difference and also we don't see seasonality in the data.
+Acf(win_inf)
+Pacf(win_inf)
+yt=ur.df(win_inf, type="trend",selectlags="BIC")
+summary(yt)
+# since tt is insignificant---- > no trend
+#since tau3 at 1% -4.2657 < -3.99. Reject null. It means no unit root.
+##Hence, no further treatment is required in the series. 
+
+dINF <- diff(win_inf,4) #first difference
+
+intord(dINF) ##converted into stationary
+Acf(dINF)
+Pacf(dINF)
+
+#SSDINF <- diff(win_inf,4)
+#Acf(SSDINF)
+#Pacf(SSDINF)
+
+#yt=ur.df(dINF, type="trend",selectlags="BIC")
+#summary(yt)
+####using auto.arima function##########
+model <- auto.arima(dINF)
+summary(model)
+#####Trial and Correction model######
+#estimate ARIMA model
+#p= 
+#q= 
+#d=0
+arma1 = arima(dINF, order = c(3,0,3)) ##following the output given by auto.arima function
+arma1
+##since PACF test doesn't show any distinct seasonality. However, little sign of signality is distinct in the early spikes.
+##Hence, we tried used seasonal dummy in the arma model to obtain no autocorrelation:
+
+arma1a = arima(dINF, order = c(3,0,3), seasonal=c(1,0,1)) ##
+arma1a
+
+
+
+arma1bb = arima(dInf, order = c(2,1,3), seasonal = c(1,0,1))
+arma1bb
+
+
+bic<-BIC(arma1)
+
+bic2<-BIC(arma1a)
+
+bic3<-BIC(arma1bb)
+cat("BIC of First Model:",bic )
+cat("BIC of Second Model:",bic2 )
+cat("BIC of Third Model:",bic3 )
+
+AIC(arma1)
+AIC(arma1a)
+AIC(arma1bb)
+
+
+##After checking BIC we can conclude that BIC of arma1b
+##furhtermore chcekcing the residuals of arma1 to check anyfurhter autocorrelation in the model through ACF and PACF.
+Acf(arma1bb$residuals) # 
+Pacf(arma1b$residuals) #
+###conclusion- Best model will be arma1b
+
+
+# diagnostics for residuals
+par(mar = c(1, 1, 1, 1))
+tsdiag(arma1bb)
+# BoX-Ljung Q Statistic
+b = Box.test(arma1bb$residuals,lag = 20, type="Ljung-Box")
+b
+
+blt = rep(0,20)
+for (i in 1:20){
+  b = Box.test(arma1bb$residuals,lag = i, type="Ljung-Box")
+  blt[i]=b$p.value
+}
+blt
+
+#
+# Out-of-sample forecasting h-steps ahead (dynamic)
+#
+
+
+
+
+####Predicting and comparing with test data
+#####################################forecasting##############################
+library(forecast)
+
+forecast_data <- forecast(arma1bb, 49) 
+print(forecast_data)
+plot(forecast_data, main = "Forecasting_data for Inflation Using Data between 1948 to 2010") 
+abline(v=2011)
+accuracy(arma1bb)
+
+###############################################
+new_win_inf <- window(dfts, start = c(2011,1)) ##Acutal data set which is creating using window function from 1st quarter of 2011 to 1st quarter of 2023 which are 49 observations 
+
+arma_pred <- predict(arma1bb, 49)###Predicted values
+
+# Generate quarterly dates
+start_date <- as.Date("2011-01-01")
+end_date <- as.Date("2023-01-01")
+dates <- seq(start_date, end_date, by = "3 months")
+
+# Create a new data frame
+new_df <- data.frame(Predicted_Inflation = arma_pred$pred, Actual_Inflation = new_win_inf, dates = dates)
+
+# Display the new data frame
+new_df
+library(ggplot2)
+# Plotting
+ggplot(new_df) +
+  geom_line(aes(x = dates, y = new_df$Predicted_Inflation, color = "Predicted Inflation")) +
+  geom_line(aes(x = dates, y = new_df$data.inf..is.na.data.inf.., color = "Actual Inflation")) +
+  labs(x = "Year", y = "Actual and Predicted Inflation") +
+  scale_color_manual(values = c("blue", "red")) +
+  theme_minimal()
+
+
+
+
+
+######################VAR/VECM######################################
+
+
+rm(list=ls())
+
+library("urca")
+library("dynlm")
+library("tseries")
+library("forecast")
+library("lmtest")
+data <- read.csv("C:/Deny/Third Semester(capstone)/determinants of inflation/inflation and its determinants.csv")
+#
+Data <- na.omit(data)
+print(Data)
+#Descriptive statistics of all the variables
+summary(Data)
+
+#converting RGDP per capita into numeric from integer
+Data$RGDP_per_capita <- as.numeric(Data$RGDP_per_capita)
+
+
+##log transfromation
+data$lRGDP_percapita <- log(data[,6])
+source(file="C:/Deny/Second Semester/Times Series/Project/intord.R")
+intord(data$lRGDP_percapita)
+
+dfts = ts(data[,2:7],frequency = 4,start=c(1955,1)) # quarterly data starting 1st quarter 1955
+plot.ts(dfts)
+
+##checking the stationarity
+
+intord(data$RGDPpercapita_growthrate) ##---> I(0) ---> no trend 
+intord(data$inflation) ##----> I(1) ---- > no trend
+intord(data$fedrata) ##-----> I(1) ----- > no trend
+intord(data$unemp)##--- > I(1) ---- > no trend
+intord(data$lRGDP_percapita)## ---- > I(1)---
+
+##checking unit root and trend
+urRGDP=ur.df(data$RGDPpercapita_growthrate,type="trend",selectlags="BIC") # trend stationary variable
+summary(urRGDP)
+##tt statistic is insignificant so no trend and tau3 statistics = -6.6723 < -3.98 @1%. Hence, reject null so no unit root.
+
+urinf=ur.df(data$inflation,type="trend",selectlags="BIC") # trend stationary variable
+summary(urinf)
+##tt statistic is insignificant so no trend and tau statistics = -3.3767 < -3.98 @1%. Hence, fail to reject null so there is unit root.
+
+urfedrate = ur.df(data$fedrata,type="trend",selectlags="BIC") # trend stationary variable
+summary(urfedrate)
+##tt statistic is insignificant so no trend and tau statistics = -3.0205 < -3.98 @1%. Hence, fail to reject null so there is unit root.
+
+urunemp = ur.df(data$unemp,type="trend",selectlags="BIC") # trend stationary variable
+summary(urunemp)
+##tt statistic is insignificant so no trend and tau statistics = -3.4472 < -3.98 @1%. Hence, fail to reject null so there is unit root.
+
+
+
+urGDPpercapita = ur.df(data$lRGDP_percapita,type="trend",selectlags="BIC") # trend stationary variable
+summary(urGDPpercapita)
+##tt is not significant and tau statistics = -1.724 > -3.98 --- > no unit root
+##conclusion: Except RGDP per capita growth rate is stationary at level and other variables are stationary after first difference. Hence, it is odd variable so we drop from further analysis or we don't include it as a part of the model.
+##Note: All the varaibles should be either statioanry at level or stationary after combination--- > if not, the odd variable should be dropped. 
+
+#converting stationary
+#dRGDP = diff(data$RGDPpercapita_growth_rate)
+dlrgdp = diff(data$lRGDP_percapita)
+intord(dlrgdp)
+
+dinflation = diff(data$inflation)
+intord(dinflation)
+
+dfedrate = diff(data$fedrata)
+intord(dfedrate)
+
+dunemp = diff(data$unemp)
+intord(dunemp)
+
+
+inflation=data$inflation
+fedrate=data$fedrata
+unemp=data$unemp
+lrgdp=data$lRGDP_percapita
+
+
+
+
+dy <- cbind( dinflation, dlrgdp,dfedrate,dunemp)  
+ly <- cbind( inflation,lrgdp, fedrate, unemp)
+
+## load urca and vars packages
+library(urca)
+library(vars)
+
+# lag selection criteria Jonsen Co-integration 
+VARselect(ly, lag.max=12, type="const")
+## cointegration - variables must be in levels! #
+jc <- ca.jo(ly, type="eigen", ecdet="const",K=2) 
+summary(jc)
+jct <- ca.jo(ly, type="trace", ecdet="const",K=2) 
+summary(jct)
+
+# eigenvalues, etc., can be taken from the output of ca.jo
+eigenvals <- jct@lambda
+
+# cointegrating relationships
+cointv <- jct@V
+cointj <- cointv[,1]
+yym <- as.matrix(ly)
+ecmj <- yym%*%cointj[1:4] + cointj[4]
+ecmjt <- ur.df(ecmj,type=("trend"),selectlags = "BIC") 
+summary(ecmjt)
+
+## over here, looking at the test statistics, we reject the null hypothesis of unit root
+
+##Anyways using engle granger
+lr = lm(lrgdp ~ inflation+ fedrate + unemp )
+summary(lr)
+ehat = lr$residuals
+intord(ehat)
+
+lr1 = lm(fedrate ~ inflation+lrgdp + unemp)
+summary(lr1)
+ehat1 = lr1$residuals
+intord(ehat1)
+
+lr2= lm(unemp ~ inflation+lrgdp + fedrate)
+summary(lr2)
+ehat2 = lr2$residuals
+intord(ehat2)
+
+lr3= lm(inflation ~ unemp+lrgdp + fedrate)
+summary(lr2)
+ehat2 = lr2$residuals
+intord(ehat2)
+
+##Plotting residual 
+par(mfrow=c(1,2))
+plot(ecmj,type='l')
+intord(ecmj)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+######################################Machine learning METHODS###############################
+#########Principal component analysis###################################
+#install.packages("FactoMineR")
+library(FactoMineR)
+# Perform PCA
+#First Step(Data scaling and normalization)
+# scaling_ taking mean of each variables and subtracting each observation from the mean value and dividing by its standard deviation
+scale_data <- scale(Data[,-1]) 
+##split the data into train and test
+idx <- floor(0.70*nrow(scale_data))
+
+#set seed to make your parition reproducible
+train_ind <- sample(seq_len(nrow(scale_data)), size=idx)
+train <- scale_data[train_ind,]
+train_df <- as.data.frame(train)
+
+test <- scale_data[-train_ind,]
+test_df <- as.data.frame(test)
+
+train_matrix <- as.matrix(train_df[, -which(names(train_df) == "inf")])
+test_matrix <- as.matrix(test_df[, -which(names(test_df) == "inf")])
+
+dim(train_df)
+dim(test_df)
+
+###############creating train and testing data matrix#############
+###This is done because glmnet function doesn't work with data frames so we have to create a numeric matrix for the training features and values of target variable
+
+
+y_train <- train_df$inf
+
+#define matrix of predictor variables
+x_train <- data.matrix(train_df[, c('effective.fed.fund.rate', 'RGDP_per_capita', 
+                                    'unemp_rate', 'exp_infl_1yr', 'exp_inf_10yr', 'real_personal_cons_exp',
+                                    'real_M2', 'real_govt_cosump_._gross_invst', 'fed_govt_current_exp', 'net_domestic_pvt_invst',
+                                    'fed_govt_interestpayment', 'indus_produtn_index', 'commercial.indus_loans',
+                                    'consumer_loans', 'creditcard_._other.loans', 'WTI', 'Unleaded', 'labor_productivity_nonfarm',
+                                    'retail_sales', 'personal_consption_nondurable_goods', 'personal_consption_durable_goods',
+                                    'import_index')])
+y_test <- test_df$inf
+
+#define matrix of predictor variables
+x_test <- data.matrix(test_df[, c('effective.fed.fund.rate', 'RGDP_per_capita', 
+                                  'unemp_rate', 'exp_infl_1yr', 'exp_inf_10yr', 'real_personal_cons_exp',
+                                  'real_M2', 'real_govt_cosump_._gross_invst', 'fed_govt_current_exp', 'net_domestic_pvt_invst',
+                                  'fed_govt_interestpayment', 'indus_produtn_index', 'commercial.indus_loans',
+                                  'consumer_loans', 'creditcard_._other.loans', 'WTI', 'Unleaded', 'labor_productivity_nonfarm',
+                                  'retail_sales', 'personal_consption_nondurable_goods', 'personal_consption_durable_goods',
+                                  'import_index')])
+
+
+
+
+
+
+
+
+
+
+
+#################MACHINE LEARNING###########################################################
+
+
+#######################Basic Linear Model#############################################
+#lets do a simple regression model and see how weel we do..
+
+simple_lm <- lm(inf ~., data = train_df)
+summary(simple_lm)
+
+######################################################
+##checking of Normality of residuals in the model##
+library(ggplot2)
+lm_residuals <- as.data.frame(residuals(simple_lm)) 
+ggplot(lm_residuals, aes(residuals(simple_lm))) +
+  geom_histogram(fill='deepskyblue', color='black')
+######################################################
+##combing the test data and predicted values
+preds <- predict(simple_lm, test_df)
+
+modelEval <- cbind(test_df$inf, preds)
+colnames(modelEval) <- c('Actual', 'Predicted')
+modelEval <- as.data.frame(modelEval)
+##type view(modelEval) in the console window or see the dataframe for the data
+#####################checking decency of the model################################
+##How well the model has predicted?? Check MSE and RMSE##
+mse <- mean((modelEval$Actual - modelEval$Predicted)^2)
+rmse <- sqrt(mse)
+rmse
+
+
+
+
+train_simple_lm_pred <- predict(simple_lm, newx = x_train)####using training data set
+test_simple_lm_pred <- predict(simple_lm, newx = x_test)####using training data set
+
+# Calculate RMSE for train dataset
+train_rmse <- sqrt(mean((train_simple_lm_pred - y_train)^2))
+
+# Calculate RMSE for test dataset
+test_rmse <- sqrt(mean((test_simple_lm_pred - y_test)^2))
+
+# Print the RMSE values
+cat("RMSE on train dataset of lasso model:", train_rmse, "\n")
+cat("RMSE on test dataset of lasso model:", test_rmse, "\n")
+
+
+
+
+
+
+
+
+
+
+##################################################################################################
+#################Principal Component Analysis##########################################
+##################################################################################################
+
+##Principal componenent Analysis###
+##Step 1: Finding best number of components in teh model:
+#####scree plot under PCA#####
+
+pca <- princomp(train_df, cor = TRUE)
+
+#scree plot
+library(factoextra)
+fviz_eig(pca, addlabels = TRUE,ylim = c(0, 70))
+
+######Bi plot under PCA#######
+fviz_pca_biplot(pca,label="var")
+##correlation matrix 
+round(cor(train_df, pca$scores),3)
+
+#################Principal Component Analysis Regression##########################################
+#install.packages("pls")
+library(pls)
+pcr_regression <- pcr(inf~., 
+                      data = train_df, 
+                      validation = "CV")            
+
+summary(pcr_regression)
+##How many principal components to choose where CV = k number in the above regression##
+##This is decided by observing the CV values and % of variance explained obtained from above regression##
+##Alos we can validate using the graph using following command##
+
+validationplot(pcr_regression) ##This will give the same number of components as above in scree plot
+validationplot(pcr_regression, val.type="MSEP")
+validationplot(pcr_regression, val.type="R2")
+
+##conclusion: This all concludes using 10-11 components will be perfect so we use ncomp = 10 below##
+pcr_pred <- predict(pcr_regression, test_df, ncomp = 10 )
+
+######################################################
+##combing the test data and predicted values
+pcr_preds <- predict(pcr_regression, test_df)
+
+pcr_modelEval <- cbind(test_df$inf, pcr_preds)
+colnames(pcr_modelEval) <- c('Actual', 'Predicted')
+pcr_modelEval <- as.data.frame(pcr_modelEval)
+
+##type view(pcr_modelEval) in the console window or see the dataframe for the data
+#####################checking decency of the model################################
+##How well the model has predicted?? Check MSE and RMSE##
+pcr_mse <- mean((pcr_modelEval$Actual - pcr_modelEval$Predicted)^2)
+pcr_rmse <- sqrt(pcr_mse)
+pcr_rmse
+
+
+
+
+
+
+#################################################################################################
+######################################RANMDOM FOREST#############################################
+#################################################################################################
+#install.packages("randomForest")
+library(randomForest)
+library(ggplot2)
+
+set.seed(1234)
+
+rf <- randomForest(inf ~ ., data=train_df, keep.forest=TRUE, importance=TRUE)
+
+summary(rf)
+rf
+which.min(rf$mse)
+sqrt(rf$mse[which.min(rf$mse)])
+
+plot(rf)
+
+print (varImpPlot(rf)) 
+##visualize the importance of the variables under random forest
+### Visualize variable importance ----------------------------------------------
+###First way to visualize importance of the variable 
+varImpPlot(rf) 
+
+# Second way to visualize importance of the variable
+library(randomForest)
+ImpData <- as.data.frame(importance(rf))
+ImpData$Var.Names <- row.names(ImpData)
+
+ggplot(ImpData, aes(x=Var.Names, y=`%IncMSE`)) +
+  geom_segment( aes(x=Var.Names, xend=Var.Names, y=0, yend=`%IncMSE`), color="skyblue") +
+  geom_point(aes(size = IncNodePurity), color="blue", alpha=0.6) +
+  theme_light() +
+  coord_flip() +
+  theme(
+    legend.position="bottom",
+    panel.grid.major.y = element_blank(),
+    panel.border = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+
+
+
+####Predicting and comparing with test data
+
+rf_pred <- predict(rf, newx = x_train)###using test data set
+prediction_rf <- data.frame(rf_prediction = rf_pred, actual_inflation = train_df$inf)
+
+# Print the prediction dataframe
+print(prediction_rf)
+
+##Finding RMSE for both test and train data set fro random forest model
+
+
+train_rf_pred <- predict(rf, newdata = x_train)####using training data set
+test_rf_pred <- predict(rf, newdata = x_test)####using testing data set
+
+# Calculate RMSE for train dataset
+train_rmse <- sqrt(mean((train_rf_pred - y_train)^2))
+
+# Calculate RMSE for test dataset
+test_rmse <- sqrt(mean((test_rf_pred - y_test)^2))
+
+# Print the RMSE values
+cat("RMSE on train dataset of lasso model:", train_rmse, "\n")
+cat("RMSE on test dataset of lasso model:", test_rmse, "\n")
+
+
